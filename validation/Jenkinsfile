@@ -128,6 +128,17 @@ node {
               }
               stage('Run Validation Tests') {
                 try {
+                  if (CAPTURE_IMAGES) {
+                    sh "mkdir -p ./validation/images"
+                    sh """
+                        docker run -d --name imageCapturer \
+                        -v ./validation/config.yaml:/app/config.yaml \
+                        -v ./validation/images/:/app/images \
+                        -t ${imageName} sh -c 'go build ../scripts/capture_images/capture_images.go && CATTLE_TEST_CONFIG=/app/config.yaml ./capture_images'
+                    """
+                    sh 'grep -m 1 "Listening to events on cluster" <(docker logs -f imageCapturer)'
+                  }
+
                   sh "docker run --name ${testContainer} -t --env-file ${envFile} " +
                   "${imageName} sh -c \"/root/go/bin/gotestsum --format standard-verbose --packages=${testsDir} --junitfile ${testResultsOut} --jsonfile ${testResultsJSON} -- -tags=${TAGS} ${GOTEST_TESTCASE} -timeout=${timeout} -v;" +
                   "${rootPath}pipeline/scripts/${reporterScript}\""
@@ -139,7 +150,7 @@ node {
                     echo "Reporter binary not present"
                   }
 
-                  if (env.CAPTURE_IMAGES) {
+                  if (CAPTURE_IMAGES) {
                     stage('Showing images used on this run') {
                       sh "docker kill --signal SIGTERM imageCapturer && docker wait imageCapturer"
                       final imagefiles = sh(script: 'ls -1 ./validation/images', returnStdout: true).split("\n").toList()
