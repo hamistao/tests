@@ -130,8 +130,33 @@ node {
                 try {
                   sh "docker run --name ${testContainer} -t --env-file ${envFile} " +
                   "${imageName} sh -c \"/root/go/bin/gotestsum --format standard-verbose --packages=${testsDir} --junitfile ${testResultsOut} --jsonfile ${testResultsJSON} -- -tags=${TAGS} ${GOTEST_TESTCASE} -timeout=${timeout} -v;" +
-                  "${rootPath}pipeline/scripts/${reporterScript};" +
-                  "${rootPath}reporter\""
+                  "${rootPath}pipeline/scripts/${reporterScript}\""
+
+                  def reporterPresent = sh('[ -f ./reporter ] && echo "true" || echo "false"', returnStdout: true)
+                  if (reporterPresent == "true") {
+                    sh "${rootPath}reporter"
+                  } else {
+                    echo "Reporter binary not present"
+                  }
+
+                  if (env.CAPTURE_IMAGES) {
+                    stage('Showing images used on this run') {
+                      sh "docker kill --signal SIGTERM imageCapturer && docker wait imageCapturer"
+                      final imagefiles = sh(script: 'ls -1 ./validation/images', returnStdout: true).split("\n").toList()
+                      if (imagefiles.isEmpty()) {
+                        echo "No image list found, showing docker logs:"
+                        final logs = sh("docker logs imageCapturer", returnStdout: true)
+                        echo "${logs}"
+                      } else {
+                        imagefiles.each { file ->
+                          echo "Images used within cluster ${file}"
+                          def content = readFile("./validation/images/${file}")
+                          echo "${content}"
+                        }
+                      }
+                      sh "docker rm imageCapturer"
+                    }
+                  }
                 } catch(err) {
                   echo 'Test run had failures. Collecting results...'
                 }
