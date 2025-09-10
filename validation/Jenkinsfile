@@ -169,7 +169,8 @@ node {
                     }
                   }
                 } catch(err) {
-                  echo 'Test run had failures. Collecting results...'
+                  echo "${e.getMessage()}"
+                  echo "${e.message}"
                 }
               }
               stage('Test Report') {
