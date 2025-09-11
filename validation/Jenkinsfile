@@ -128,7 +128,7 @@ node {
               }
               stage('Run Validation Tests') {
                 try {
-                  if (CAPTURE_IMAGES) {
+                  if (env.CAPTURE_IMAGES == "true") {
                     sh "mkdir -p ./validation/images"
                     sh """
                         docker run -d --name imageCapturer \
@@ -150,7 +150,7 @@ node {
                     echo "Reporter binary not present"
                   }
 
-                  if (CAPTURE_IMAGES) {
+                  if (env.CAPTURE_IMAGES == "true") {
                     stage('Showing images used on this run') {
                       sh "docker kill --signal SIGTERM imageCapturer && docker wait imageCapturer"
                       final imagefiles = sh(script: 'ls -1 ./validation/images', returnStdout: true).split("\n").toList()
@@ -169,8 +169,7 @@ node {
                     }
                   }
                 } catch(err) {
-                  echo "${e.getMessage()}"
-                  echo "${e.message}"
+                  echo "${err.message}"
                 }
               }
               stage('Test Report') {
