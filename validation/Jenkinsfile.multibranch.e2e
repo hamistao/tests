@@ -436,6 +436,28 @@ insecure = true'''
                         }
                     }
 
+                    // Determine the effective Qase test run name. When QASE_TEST_RUN_CUSTOM_NAME
+                    // is empty, fall back to  some value depending on the job's triigger and environment.
+                    if (env.JOB_NAME.contains('go-pit')) {
+                        def cadence = env.JOB_NAME.contains('daily') ? 'daily' : env.JOB_NAME.contains('weekly') ? 'weekly' : 'custom'
+
+                        if (!qaseTestRunCustomName?.trim()) {
+                            def triggeredByTimer = !currentBuild.getBuildCauses(
+                                'hudson.triggers.TimerTrigger$TimerTriggerCause'
+                            ).isEmpty()
+
+                            if (triggeredByTimer) {
+                                qaseTestRunCustomName = "PIT ${cadence.capitalize()} Test Run"
+                            } else {
+                                qaseTestRunCustomName = "PIT manual Test Run"
+                            }
+
+                            if (!(env.JENKINS_URL ?: '').contains('baler')) {
+                                qaseTestRunCustomName = "Staging " + qaseTestRunCustomName
+                            }
+                        }
+                    }
+
                     // Matrix of (imageTag, validationTags) pairs to trigger per cadence.
                     // Weekly run covers the latest version against the weekly suite plus
                     // the two prior minor versions against the daily suite. Daily run only
