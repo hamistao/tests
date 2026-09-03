@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	upstream "github.com/qase-tms/qase-go/qase-api-client"
 	"github.com/sirupsen/logrus"
@@ -23,6 +24,8 @@ type Service struct {
 
 const (
 	schemas        = "schemas.yaml"
+	failStatus     = "failed"
+	skippedStatus  = "skipped"
 	requestLimit   = 100
 	runSourceID    = 16
 	recurringRunID = 1
@@ -251,4 +254,76 @@ func (q *Service) CompleteTestRun(projectIDEnvVar string, testRunID int32) error
 	}
 
 	return nil
+}
+
+// GetLatestDailyRunWithPrefix returns a number of the most recently started daily Test Runs whose title begins with the
+// provided prefix within a specified Qase Project.
+func (q *Service) GetLatestDailyRunsWithPrefix(project string, name string, numberOfRuns int32) ([]upstream.Run, error) {
+	if numberOfRuns < 1 {
+		return []upstream.Run{}, nil
+	}
+
+	now := time.Now()
+	midnightToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	from := midnightToday.AddDate(0, 0, -int(numberOfRuns))
+	logrus.Debugf("Getting runs named \"%s\" in project %s from %s\n", name, project, from)
+
+	runRequest := q.Client.RunsAPI.GetRuns(context.Background(), project)
+	runRequest = runRequest.Search(name)
+	runRequest = runRequest.FromStartTime(from.Unix())
+
+	runResponse, _, err := runRequest.Execute()
+	if err != nil {
+		return nil, err
+	}
+
+	runs := runResponse.Result.Entities
+	if len(runs) < int(numberOfRuns) {
+		return nil, fmt.Errorf("not enough test runs over the expected time period. Found %d, expected %d", len(runs), numberOfRuns)
+	}
+
+	return runs[len(runs)-int(numberOfRuns):], nil // We do some trickery with the resulting run slice to avoid returning more runs than needed.
+}
+
+// GetFailedTestsForRun returns the failed test titles results for a given Test Run.
+// This returns two identically lenghed slices, the first containing the case titles and the second containing qase-api-client.Result.
+func (q *Service) GetFailedTestsForRun(project string, runID int32) ([]string, []upstream.Result, error) {
+	logrus.Debugf("Getting failed results for run %d in project %s\n", runID, project)
+
+	resultRequest := q.Client.ResultsAPI.GetResults(context.Background(), project)
+	resultRequest = resultRequest.Run(fmt.Sprintf("%d", runID))
+	resultRequest = resultRequest.Status(failStatus)
+
+	resultResponse, _, err := resultRequest.Execute()
+	if err != nil {
+		return nil, nil, err
+	}
+	results := resultResponse.Result.Entities
+
+	caseTitles := make([]string, len(results))
+	for i, result := range results {
+		caseTitles[i], err = q.getCaseTitle(project, *result.CaseId)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return caseTitles, results, nil
+}
+
+// getCaseTitle returns the title of a Test Case by its id within a specified Qase Project.
+func (q *Service) getCaseTitle(project string, caseID int64) (string, error) {
+	logrus.Debugf("Getting case titles for test case %d in project %s\n", caseID, project)
+
+	caseRequest := q.Client.CasesAPI.GetCase(context.Background(), project, int32(caseID))
+	resp, _, err := caseRequest.Execute()
+	if err != nil {
+		return "", err
+	}
+
+	if resp.Result == nil || resp.Result.Title == nil {
+		return "", fmt.Errorf("test case %d has no title in project %s", caseID, project)
+	}
+
+	return *resp.Result.Title, nil
 }
