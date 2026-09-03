@@ -402,18 +402,9 @@ insecure = true'''
         stage('Trigger Per-Version Jobs') {
             steps {
                 script {
-                    def isPitJob = env.JOB_NAME.contains('go-pit')
                     def recurringJob = params.RECURRING_JOB
                     def individualJob = params.INDIVIDUAL_JOB
                     def hostnamePrefix = params.HOSTNAME_PREFIX
-                    if (isPitJob) {
-                        recurringJob = 'go-pit-setup-job'
-                        individualJob = 'go-pit-validation-job'
-                        hostnamePrefix = "pit-${hostnamePrefix}"
-                        if (env.JOB_NAME.contains('weekly')) {
-                            hostnamePrefix = "pit-recurringweekly"
-                        }
-                    }
 
                     // Matrix of (imageTag, validationTags) pairs to trigger per cadence.
                     // Weekly run covers the latest version against the weekly suite plus
@@ -441,18 +432,11 @@ insecure = true'''
                     def matchedJobKey = runMatrixByJob.keySet().find { env.JOB_NAME.contains(it) }
                     def runMatrix = matchedJobKey ? runMatrixByJob[matchedJobKey] : defaultMatrix
 
-                    // Map image tags to hostname suffixes for unique DNS entries
-                    def hostnameSuffixMap = [
-                        'v2.8-head': 'v28',
-                        'v2.9-head': 'v29',
-                        'v2.10-head': 'v210',
-                        'v2.11-head': 'v211',
-                        'v2.12-head': 'v212',
-                        'v2.13-head': 'v213',
-                        'v2.14-head': 'v214',
-                        'v2.15-head': 'v215',
-                        'head': 'main'
-                    ]
+                    // Map image tags to hostname suffixes for unique DNS entries.
+                    // e.g. 'v2.8-head' -> 'v28', 'v2.15-head' -> 'v215', 'head' -> 'head'.
+                    def hostnameSuffix = { tag ->
+                        tag == 'head' ? 'head' : tag.replaceAll('-head$', '').replaceAll('[^a-zA-Z0-9]', '')
+                    }
 
                     // Map image tags to Rancher chart versions
                     def tagChartMap = [
@@ -467,15 +451,12 @@ insecure = true'''
                         'head': 'latest'
                     ]
 
-                    // Tags that should use the prime chart repo
-                    def primeChartTags = ['head', 'v2.9-head']
-
                     def jobs = [:]
 
                     for (entry in runMatrix) {
                         def tag = entry.imageTag // capture for closure
                         def validationTags = entry.validationTags
-                        def suffix = hostnameSuffixMap.get(tag, tag.replaceAll('[^a-zA-Z0-9]', ''))
+                        def suffix = hostnameSuffix(tag)
                         def hostname = "${hostnamePrefix}${suffix}"
                         def rancherVersion = tagChartMap.get(tag, entry.imageTag)
 
