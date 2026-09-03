@@ -391,6 +391,11 @@ insecure = true'''
             defaultValue: '',
             description: 'Schema file prefix for Qase operations, for example hostbusters or pit'
         )
+        string(
+            name: 'QASE_TEST_RUN_CUSTOM_NAME',
+            defaultValue: '',
+            description: 'Optional custom name for the created Qase test run (if Qase reporting is enabled). If disabled the run will be determined automatically by the downstream job.'
+        )
     }
 
     stages {
@@ -517,6 +522,7 @@ insecure = true'''
                             string(name: 'TEST_TIMEOUT', value: params.TEST_TIMEOUT),
                             string(name: 'QASE_REPORTER_SCRIPT', value: params.QASE_REPORTER_SCRIPT),
                             string(name: 'QASE_SCHEMA_PREFIX', value: params.QASE_SCHEMA_PREFIX),
+                            string(name: 'QASE_TEST_RUN_CUSTOM_NAME', value: params.QASE_TEST_RUN_CUSTOM_NAME),
                         ]
 
                         jobs["${tag}-${validationTags}"] = {
