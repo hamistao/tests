@@ -402,16 +402,16 @@ insecure = true'''
         stage('Trigger Per-Version Jobs') {
             steps {
                 script {
-                    def isPitJob = env.JOB_NAME.contains('go-pit')
                     def recurringJob = params.RECURRING_JOB
                     def individualJob = params.INDIVIDUAL_JOB
-                    def hostnamePrefix = params.HOSTNAME_PREFIX
-                    if (isPitJob) {
-                        recurringJob = 'go-pit-setup-job'
-                        individualJob = 'go-pit-validation-job'
-                        hostnamePrefix = "pit-${hostnamePrefix}"
-                        if (env.JOB_NAME.contains('weekly')) {
-                            hostnamePrefix = "pit-recurringweekly"
+                    def commonPrefix = params.HOSTNAME_PREFIX
+                    if (commonPrefix?.trim() && env.JOB_NAME.contains('go-pit')) {
+                        if (env.JOB_NAME.contains('daily')) {
+                            commonPrefix = "pit-daily"
+                        } else if (env.JOB_NAME.contains('weekly')) {
+                            commonPrefix = "pit-weekly"
+                        } else {
+                            commonPrefix = "pit-job"
                         }
                     }
 
@@ -441,18 +441,11 @@ insecure = true'''
                     def matchedJobKey = runMatrixByJob.keySet().find { env.JOB_NAME.contains(it) }
                     def runMatrix = matchedJobKey ? runMatrixByJob[matchedJobKey] : defaultMatrix
 
-                    // Map image tags to hostname suffixes for unique DNS entries
-                    def hostnameSuffixMap = [
-                        'v2.8-head': 'v28',
-                        'v2.9-head': 'v29',
-                        'v2.10-head': 'v210',
-                        'v2.11-head': 'v211',
-                        'v2.12-head': 'v212',
-                        'v2.13-head': 'v213',
-                        'v2.14-head': 'v214',
-                        'v2.15-head': 'v215',
-                        'head': 'main'
-                    ]
+                    // Map image tags to hostname suffixes for unique DNS entries.
+                    // e.g. 'v2.8-head' -> 'v28', 'v2.15-head' -> 'v215', 'head' -> 'head'.
+                    def hostnameSuffix = { tag ->
+                        tag == 'head' ? 'main' : tag.replaceAll('-head$', '').replaceAll('[^a-zA-Z0-9]', '')
+                    }
 
                     // Map image tags to Rancher chart versions
                     def tagChartMap = [
@@ -467,27 +460,25 @@ insecure = true'''
                         'head': 'latest'
                     ]
 
-                    // Tags that should use the prime chart repo
-                    def primeChartTags = ['head', 'v2.9-head']
-
                     def jobs = [:]
+                    def hostnamePrefix
 
                     for (entry in runMatrix) {
                         def tag = entry.imageTag // capture for closure
                         def validationTags = entry.validationTags
-                        def suffix = hostnameSuffixMap.get(tag, tag.replaceAll('[^a-zA-Z0-9]', ''))
-                        def hostname = "${hostnamePrefix}${suffix}"
+                        def suffix = hostnameSuffix(tag)
+                        hostnamePrefix = "${commonPrefix}${suffix}"
                         def rancherVersion = tagChartMap.get(tag, entry.imageTag)
 
                         // Render per-tag hostname into TERRAFORM_CONFIG and CATTLE_TEST_CONFIG
                         def tfConfig = infrastructure.parseAndSubstituteVars(
                             content: params.TERRAFORM_CONFIG,
-                            envVars: ['HOSTNAME_PREFIX': hostname]
+                            envVars: ['HOSTNAME_PREFIX': hostnamePrefix]
                         )
 
                         def cattleConfig = infrastructure.parseAndSubstituteVars(
                             content: params.CATTLE_TEST_CONFIG,
-                            envVars: ['HOSTNAME_PREFIX': hostname]
+                            envVars: ['HOSTNAME_PREFIX': hostnamePrefix]
                         )
 
                         def jobParams = [
@@ -496,7 +487,7 @@ insecure = true'''
                             string(name: 'TESTS_BRANCH', value: params.TESTS_BRANCH),
                             string(name: 'QA_INFRA_REPO_URL', value: params.QA_INFRA_REPO_URL),
                             string(name: 'QA_INFRA_BRANCH', value: params.QA_INFRA_BRANCH),
-                            string(name: 'HOSTNAME_PREFIX', value: hostname),
+                            string(name: 'HOSTNAME_PREFIX', value: hostnamePrefix),
                             string(name: 'RKE2_VERSION', value: entry.rke2Version),
                             string(name: 'RANCHER_VERSION', value: rancherVersion),
                             string(name: 'RANCHER_IMAGE_TAG', value: tag),
