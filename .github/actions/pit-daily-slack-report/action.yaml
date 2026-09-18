@@ -1,0 +1,35 @@
+---
+name: "PIT Daily Slack Report"
+description: "Grab failed tests from the latest pit-daily Qase run and send a report to Slack"
+inputs:
+  qase-automation-token:
+    description: "Qase API token (QASE_AUTOMATION_TOKEN)"
+    required: true
+  slack-webhook-url:
+    description: "Slack webhook URL"
+    required: true
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/setup-go@v5
+    with:
+      go-version-file: go.mod
+      cache: false
+
+  - id: results
+    shell: bash
+    env:
+      QASE_AUTOMATION_TOKEN: ${{ inputs.qase-automation-token }}
+    run: |
+      {
+        echo "report=$(go run ./scripts/latest-daily-results/latest-daily-results.go)"
+        echo "EOF"
+      } >> "$GITHUB_OUTPUT"
+
+  - uses: slackapi/slack-github-action@faf8f8f0669585c3c0adaf42d29b91413be78d48 #v4
+    with:
+      payload-delimiter: "_"
+      webhook: ${{ inputs.slack_webhook_url }}
+      webhook-type: webhook-trigger
+      payload: |
+        message: "${{ steps.results.outputs.report }}"
