@@ -427,6 +427,20 @@ insecure = true'''
                     def recurringJob = params.RECURRING_JOB
                     def individualJob = params.INDIVIDUAL_JOB
                     def commonPrefix = params.HOSTNAME_PREFIX
+
+                    // Determine the effective Qase test run name. When QASE_TEST_RUN_CUSTOM_NAME
+                    // is empty, fall back to a default value ONLY when the build was triggered
+                    // by the timer AND we are running on the intended environment.
+                    def qaseTestRunCustomName = params.QASE_TEST_RUN_CUSTOM_NAME
+                    if (!qaseTestRunCustomName?.trim()) {
+                        def triggeredByTimer = !currentBuild.getBuildCauses(
+                            'hudson.triggers.TimerTrigger$TimerTriggerCause'
+                        ).isEmpty()
+                        def jenkinsHostname = env.JENKINS_URL ? (new URI(env.JENKINS_URL).getHost() ?: '') : ''
+                        if (triggeredByTimer && jenkinsHostname.contains('baler')) {
+                            qaseTestRunCustomName = 'PIT test run'
+                        }
+                    }
                     if (commonPrefix?.trim() && env.JOB_NAME.contains('go-pit')) {
                         if (env.JOB_NAME.contains('daily')) {
                             commonPrefix = "pit-daily"
@@ -536,7 +550,7 @@ insecure = true'''
                             string(name: 'TEST_TIMEOUT', value: params.TEST_TIMEOUT),
                             string(name: 'QASE_REPORTER_SCRIPT', value: params.QASE_REPORTER_SCRIPT),
                             string(name: 'QASE_SCHEMA_PREFIX', value: params.QASE_SCHEMA_PREFIX),
-                            string(name: 'QASE_TEST_RUN_CUSTOM_NAME', value: params.QASE_TEST_RUN_CUSTOM_NAME),
+                            string(name: 'QASE_TEST_RUN_CUSTOM_NAME', value: qaseTestRunCustomName + " - " + tag),
                         ]
 
                         jobs["${tag}-${validationTags}"] = {
