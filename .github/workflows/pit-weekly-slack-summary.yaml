@@ -3,8 +3,8 @@ name: PIT Weekly Slack Summary
 
 on:
   schedule:
-    # Run every Saturday at 6 AM UTC
-    - cron: "0 6 * * 6"
+    # Run every Monday at 6 AM UTC
+    - cron: "0 6 * * 1"
   workflow_dispatch: {}
 
 jobs:
