@@ -1,0 +1,69 @@
+---
+name: "PIT Weekly Slack Summary"
+description: "Summarize pit-daily Qase jobs over the past week and send a report to Slack"
+inputs:
+  qase-automation-token:
+    description: "Qase API token (QASE_AUTOMATION_TOKEN)"
+    required: true
+  slack-webhook-url:
+    description: "Slack webhook URL"
+    required: true
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/setup-go@v5
+    with:
+      go-version-file: go.mod
+      cache: false
+
+  - id: summary
+    shell: bash
+    env:
+      QASE_AUTOMATION_TOKEN: ${{ inputs.qase-automation-token }}
+    run: |
+      report="$(go run ./.github/scripts/weekly-jobs-summary)"
+      echo "Weekly pit-daily summary: $report"
+
+      from="$(echo "$report" | jq -r '.from')"
+      to="$(echo "$report" | jq -r '.to')"
+      runs_checked="$(echo "$report" | jq -r '.runs_checked')"
+      failed_count="$(echo "$report" | jq -r '.failed_count')"
+
+      if [ "$failed_count" -eq 0 ]; then
+        failed_list="No test failures this week :tada:"
+        emoji=":vcheck1:"
+      else
+        failed_list="$(echo "$report" | jq -r '.failed_tests[] | "• *" + .title + "* — failed on: " + (.days | join(", "))')"
+        emoji=":x:"
+      fi
+
+      {
+        echo "from=$from"
+        echo "to=$to"
+        echo "runs-checked=$runs_checked"
+        echo "failed-count=$failed_count"
+        echo "emoji=$emoji"
+        echo "failed-list<<EOF"
+        echo "$failed_list"
+        echo "EOF"
+      } >> "$GITHUB_OUTPUT"
+
+  - uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 #v3
+    with:
+      webhook: ${{ inputs.slack-webhook-url }}
+      webhook-type: incoming-webhook
+      payload: |
+        text: "PIT Weekly Summary — ${{ steps.summary.outputs.failed-count }} test(s) failed over the past week"
+        blocks:
+          - type: "header"
+            text:
+              type: "plain_text"
+              text: "PIT Weekly Summary"
+          - type: "section"
+            text:
+              type: "mrkdwn"
+              text: "${{ steps.summary.outputs.emoji }} *Window:* `${{ steps.summary.outputs.from }}` → `${{ steps.summary.outputs.to }}`\n*Runs checked:* ${{ steps.summary.outputs.runs-checked }}\n*Tests with failures:* ${{ steps.summary.outputs.failed-count }}"
+          - type: "section"
+            text:
+              type: "mrkdwn"
+              text: "${{ steps.summary.outputs.failed-list }}"
